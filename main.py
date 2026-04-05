@@ -1,89 +1,130 @@
 import random
+import json
+import os
 
 choices = ["rock", "paper", "scissors"]
-
-user_history = []
-user_score = 0
-computer_score = 0
+DATA_FILE = "game_data.json"
 
 
-def get_probabilities(history):
+def load_data() -> dict:
+    """Load saved scores and history from file."""
+    if not os.path.exists(DATA_FILE):
+        return {"user_score": 0, "computer_score": 0, "user_history": []}
+    try:
+        with open(DATA_FILE, "r") as f:
+            data = json.load(f)
+            # Validate expected keys exist
+            for key in ("user_score", "computer_score", "user_history"):
+                if key not in data:
+                    raise KeyError(f"Missing key: {key}")
+            return data
+    except (json.JSONDecodeError, KeyError) as e:
+        print(f"⚠️  Corrupted save file ({e}). Starting fresh.\n")
+        return {"user_score": 0, "computer_score": 0, "user_history": []}
+
+
+def save_data(user_score: int, computer_score: int, user_history: list) -> None:
+    """Persist scores and history to file."""
+    try:
+        with open(DATA_FILE, "w") as f:
+            json.dump(
+                {"user_score": user_score, "computer_score": computer_score, "user_history": user_history},
+                f,
+                indent=2
+            )
+    except OSError as e:
+        print(f"⚠️  Could not save data: {e}")
+
+
+def get_probabilities(history: list) -> dict:
     total = len(history)
-
-    return {
-        "rock": history.count("rock") / total,
-        "paper": history.count("paper") / total,
-        "scissors": history.count("scissors") / total
-    }
+    return {choice: history.count(choice) / total for choice in choices}
 
 
-def get_computer_choice():
-    # If not enough data → random
+def get_computer_choice(user_history: list) -> str:
     if len(user_history) < 3:
         return random.choice(choices)
 
     probs = get_probabilities(user_history)
-
-    # Predict using weighted probability
     predicted = random.choices(
         population=choices,
         weights=[probs["rock"], probs["paper"], probs["scissors"]]
     )[0]
 
-    # Counter strategy
-    counter = {
-        "rock": "paper",
-        "paper": "scissors",
-        "scissors": "rock"
-    }
-
+    counter = {"rock": "paper", "paper": "scissors", "scissors": "rock"}
     return counter[predicted]
 
 
-def get_winner(user, computer):
+def get_winner(user: str, computer: str) -> str:
     if user == computer:
         return "draw"
-    elif (user == "rock" and computer == "scissors") or (user == "paper" and computer == "rock") or (user == "scissors" and computer == "paper"):
-        return "user"
-    else:
-        return "computer"
+    winning_combos = {("rock", "scissors"), ("paper", "rock"), ("scissors", "paper")}
+    return "user" if (user, computer) in winning_combos else "computer"
 
 
-def play():
-    global user_score, computer_score
+def display_result(result: str, user_score: int, computer_score: int) -> None:
+    """Use match/case to display round result."""
+    match result:
+        case "draw":
+            print("🤝 Draw!")
+        case "user":
+            print("🎉 You win!")
+        case "computer":
+            print("💻 Computer wins!")
+        case _:
+            print("❓ Unknown result.")
+
+    print(f"📊 Score → You: {user_score} | Computer: {computer_score}\n")
+
+
+def play() -> None:
+    data = load_data()
+    user_score: int = data["user_score"]
+    computer_score: int = data["computer_score"]
+    user_history: list = data["user_history"]
 
     print("🎮 Rock Paper Scissors (Smart AI)")
-    print("Type 'exit' to quit\n")
+    print(f"📂 Loaded → You: {user_score} | Computer: {computer_score}")
+    print("Type 'exit' to quit or 'reset' to clear scores.\n")
 
     while True:
-        user = input("Enter rock, paper, or scissors: ").lower()
-
-        if user == "exit":
-            print("\n🏁 Final Score:")
-            print(f"You: {user_score} | Computer: {computer_score}")
+        try:
+            user = input("Enter rock, paper, or scissors: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\n👋 Game interrupted.")
             break
 
-        if user not in choices:
-            print("❌ Invalid input. Try again.\n")
-            continue
+        match user:
+            case "exit":
+                print("\n🏁 Final Score:")
+                print(f"You: {user_score} | Computer: {computer_score}")
+                save_data(user_score, computer_score, user_history)
+                print("💾 Progress saved.")
+                break
 
-        computer = get_computer_choice()
-        user_history.append(user)
+            case "reset":
+                user_score, computer_score, user_history = 0, 0, []
+                save_data(user_score, computer_score, user_history)
+                print("🔄 Scores reset.\n")
 
-        print("Computer chose:", computer)
+            case "rock" | "paper" | "scissors":
+                computer = get_computer_choice(user_history)
+                user_history.append(user)
 
-        result = get_winner(user, computer)
+                print(f"Computer chose: {computer}")
+                result = get_winner(user, computer)
 
-        if result == "draw":
-            print("🤝 Draw!")
-        elif result == "user":
-            print("🎉 You win!")
-            user_score += 1
-        else:
-            print("💻 Computer wins!")
-            computer_score += 1
+                match result:
+                    case "user":
+                        user_score += 1
+                    case "computer":
+                        computer_score += 1
 
-        print(f"📊 Score → You: {user_score} | Computer: {computer_score}\n")
+                display_result(result, user_score, computer_score)
+                save_data(user_score, computer_score, user_history)
+
+            case _:
+                print("❌ Invalid input. Try 'rock', 'paper', or 'scissors'.\n")
 
 
 if __name__ == "__main__":
